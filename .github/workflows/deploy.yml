@@ -1,0 +1,94 @@
+name: KairosLMS Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy:
+    runs-on: ubuntu-22.04
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+    - uses: actions/checkout@v2
+    
+    - name: Setup SSH key
+      uses: webfactory/ssh-agent@v0.5.3
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+    
+    - name: Add host key to known hosts
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+    
+    - name: Configure environment
+      run: |
+        cat > .env << EOF
+        # Database Settings
+        DB_USER=${{ secrets.DB_USER }}
+        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+        DB_NAME=${{ secrets.DB_NAME }}
+        DB_HOST=${{ secrets.DB_HOST }}
+        DB_PORT=${{ secrets.DB_PORT }}
+        
+        # API Settings
+        SECRET_KEY=${{ secrets.SECRET_KEY }}
+        
+        # Gmail API Settings
+        GMAIL_CREDENTIALS_FILE=/app/config/gmail_credentials.json
+        GMAIL_TOKEN_FILE=/app/config/gmail_token.json
+        
+        # Google Calendar API Settings
+        CALENDAR_CREDENTIALS_FILE=/app/config/calendar_credentials.json
+        CALENDAR_TOKEN_FILE=/app/config/calendar_token.json
+        
+        # Todoist API Settings
+        TODOIST_API_KEY=${{ secrets.TODOIST_API_KEY }}
+        
+        # LLM Settings
+        ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+        
+        # Backup Settings
+        ENABLE_BACKUPS=true
+        BACKUP_ON_SHUTDOWN=true
+        DB_BACKUP_INTERVAL_DAYS=1
+        KEEP_BACKUPS_DAYS=30
+        
+        # Ingestion Settings
+        EMAIL_INGESTION_INTERVAL_MINUTES=1440
+        CALENDAR_INGESTION_INTERVAL_MINUTES=60
+        TODOIST_INGESTION_INTERVAL_MINUTES=30
+        
+        # Processing Settings
+        STATUS_OVERVIEW_INTERVAL_HOURS=12
+        TASK_PRIORITIZATION_INTERVAL_MINUTES=30
+        LLM_ENHANCED_PROCESSING_INTERVAL_HOURS=24
+        EOF
+    
+    - name: Copy files to server
+      run: |
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ~/kairoslms-${{ github.event.inputs.environment }}"
+        scp -r src tests config requirements.txt .env ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }}:~/kairoslms-${{ github.event.inputs.environment }}/
+    
+    - name: Deploy with Docker Compose
+      run: |
+        ssh ${{ secrets.SSH_USER }}@${{ secrets.SERVER_IP }} "cd ~/kairoslms-${{ github.event.inputs.environment }} && docker-compose -f config/docker-compose.yml down && docker-compose -f config/docker-compose.yml up -d"
+    
+    - name: Verify deployment
+      run: |
+        sleep 15  # Wait for containers to start
+        response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.SERVER_IP }}:8000/health)
+        if [ "$response" != "200" ]; then
+          echo "Deployment verification failed with status $response"
+          exit 1
+        fi
+        echo "Deployment successful! API is healthy."

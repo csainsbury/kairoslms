@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+
+{% block additional_styles %}
+.settings-card {
+    margin-bottom: 2rem;
+}
+.slider-label {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.5rem;
+}
+.api-status {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+.api-status.active {
+    background-color: #28a745;
+}
+.api-status.inactive {
+    background-color: #dc3545;
+}
+.scheduler-job {
+    padding: 0.5rem;
+    border-bottom: 1px solid #eee;
+}
+.save-indicator {
+    display: none;
+    margin-left: 10px;
+}
+.save-indicator.show {
+    display: inline-block;
+}
+{% endblock %}
+
+{% block content %}
+<div class="col-md-10 mx-auto">
+    <div class="card settings-card">
+        <div class="card-header">
+            <h5 class="mb-0">Scheduling Settings</h5>
+        </div>
+        <div class="card-body">
+            <form id="schedulingForm">
+                <div class="mb-4">
+                    <h6>Data Ingestion Frequency</h6>
+                    
+                    <div class="mb-3">
+                        <label for="emailInterval" class="form-label">Email Ingestion (minutes)</label>
+                        <input type="range" class="form-range" id="emailInterval" min="60" max="2880" step="60">
+                        <div class="slider-label">
+                            <span>Hourly</span>
+                            <span id="emailIntervalValue">1440 (Daily)</span>
+                            <span>2 Days</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="calendarInterval" class="form-label">Calendar Ingestion (minutes)</label>
+                        <input type="range" class="form-range" id="calendarInterval" min="15" max="240" step="15">
+                        <div class="slider-label">
+                            <span>15 min</span>
+                            <span id="calendarIntervalValue">60 (Hourly)</span>
+                            <span>4 hours</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="todoistInterval" class="form-label">Todoist Ingestion (minutes)</label>
+                        <input type="range" class="form-range" id="todoistInterval" min="5" max="120" step="5">
+                        <div class="slider-label">
+                            <span>5 min</span>
+                            <span id="todoistIntervalValue">30</span>
+                            <span>2 hours</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <h6>Processing Frequency</h6>
+                    
+                    <div class="mb-3">
+                        <label for="statusInterval" class="form-label">Status Overview Generation (hours)</label>
+                        <input type="range" class="form-range" id="statusInterval" min="1" max="24" step="1">
+                        <div class="slider-label">
+                            <span>1 hour</span>
+                            <span id="statusIntervalValue">12</span>
+                            <span>Daily</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="taskInterval" class="form-label">Task Prioritization (minutes)</label>
+                        <input type="range" class="form-range" id="taskInterval" min="5" max="120" step="5">
+                        <div class="slider-label">
+                            <span>5 min</span>
+                            <span id="taskIntervalValue">30</span>
+                            <span>2 hours</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="llmInterval" class="form-label">LLM-Enhanced Processing (hours)</label>
+                        <input type="range" class="form-range" id="llmInterval" min="1" max="72" step="1">
+                        <div class="slider-label">
+                            <span>1 hour</span>
+                            <span id="llmIntervalValue">24 (Daily)</span>
+                            <span>3 days</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Save Settings</button>
+                <span class="save-indicator" id="saveIndicator">
+                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    <span>Saving...</span>
+                </span>
+            </form>
+        </div>
+    </div>
+    
+    <div class="card settings-card">
+        <div class="card-header">
+            <h5 class="mb-0">System Status</h5>
+        </div>
+        <div class="card-body">
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <h6>Services</h6>
+                    <ul class="list-group" id="servicesList">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>Loading services status...</span>
+                            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="col-md-6">
+                    <h6>API Integrations</h6>
+                    <ul class="list-group" id="apisList">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>Loading API status...</span>
+                            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div>
+                <h6>Active Scheduler Jobs</h6>
+                <div id="jobsList" class="border rounded">
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <div>Loading scheduler jobs...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block javascript %}
+<script>
+    // Functions to update slider value displays
+    function updateSliderValueDisplay(sliderId, valueId, suffix = '') {
+        const slider = document.getElementById(sliderId);
+        const valueDisplay = document.getElementById(valueId);
+        let displayValue = slider.value;
+        
+        // Add human-readable labels for common time intervals
+        if (sliderId === 'emailInterval' && slider.value == 1440) {
+            displayValue += ' (Daily)';
+        } else if (sliderId === 'calendarInterval' && slider.value == 60) {
+            displayValue += ' (Hourly)';
+        } else if (sliderId === 'statusInterval' && slider.value == 12) {
+            displayValue += ' (12-hourly)';
+        } else if (sliderId === 'llmInterval' && slider.value == 24) {
+            displayValue += ' (Daily)';
+        }
+        
+        valueDisplay.textContent = displayValue + suffix;
+    }
+    
+    // Function to load scheduling settings
+    function loadSchedulingSettings() {
+        fetch('/api/settings/scheduling')
+            .then(response => response.json())
+            .then(settings => {
+                // Set slider values
+                document.getElementById('emailInterval').value = settings.email_ingestion_interval_minutes;
+                document.getElementById('calendarInterval').value = settings.calendar_ingestion_interval_minutes;
+                document.getElementById('todoistInterval').value = settings.todoist_ingestion_interval_minutes;
+                document.getElementById('statusInterval').value = settings.status_overview_interval_hours;
+                document.getElementById('taskInterval').value = settings.task_prioritization_interval_minutes;
+                document.getElementById('llmInterval').value = settings.llm_enhanced_processing_interval_hours;
+                
+                // Update displays
+                updateSliderValueDisplay('emailInterval', 'emailIntervalValue');
+                updateSliderValueDisplay('calendarInterval', 'calendarIntervalValue');
+                updateSliderValueDisplay('todoistInterval', 'todoistIntervalValue');
+                updateSliderValueDisplay('statusInterval', 'statusIntervalValue');
+                updateSliderValueDisplay('taskInterval', 'taskIntervalValue');
+                updateSliderValueDisplay('llmInterval', 'llmIntervalValue');
+            })
+            .catch(error => {
+                console.error('Error loading scheduling settings:', error);
+                alert('Error loading scheduling settings. Please try again.');
+            });
+    }
+    
+    // Function to save scheduling settings
+    function saveSchedulingSettings(e) {
+        e.preventDefault();
+        
+        // Show saving indicator
+        document.getElementById('saveIndicator').classList.add('show');
+        
+        // Get values from sliders
+        const settings = {
+            email_ingestion_interval_minutes: parseInt(document.getElementById('emailInterval').value),
+            calendar_ingestion_interval_minutes: parseInt(document.getElementById('calendarInterval').value),
+            todoist_ingestion_interval_minutes: parseInt(document.getElementById('todoistInterval').value),
+            status_overview_interval_hours: parseInt(document.getElementById('statusInterval').value),
+            task_prioritization_interval_minutes: parseInt(document.getElementById('taskInterval').value),
+            llm_enhanced_processing_interval_hours: parseInt(document.getElementById('llmInterval').value)
+        };
+        
+        // Send to API
+        fetch('/api/settings/scheduling', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(settings)
+        })
+        .then(response => response.json())
+        .then(updatedSettings => {
+            // Hide saving indicator
+            document.getElementById('saveIndicator').classList.remove('show');
+            
+            // Show success message
+            alert('Settings saved successfully!');
+            
+            // Reload system status to reflect changes
+            loadSystemStatus();
+        })
+        .catch(error => {
+            console.error('Error saving scheduling settings:', error);
+            
+            // Hide saving indicator
+            document.getElementById('saveIndicator').classList.remove('show');
+            
+            // Show error message
+            alert('Error saving settings. Please try again.');
+        });
+    }
+    
+    // Function to load system status
+    function loadSystemStatus() {
+        fetch('/api/settings/status')
+            .then(response => response.json())
+            .then(status => {
+                // Update services list
+                const servicesList = document.getElementById('servicesList');
+                servicesList.innerHTML = '';
+                
+                for (const [service, isRunning] of Object.entries(status.services)) {
+                    const serviceItem = document.createElement('li');
+                    serviceItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    
+                    // Format service name
+                    const serviceName = service.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    
+                    serviceItem.innerHTML = `
+                        <span>${serviceName}</span>
+                        <span class="badge ${isRunning ? 'bg-success' : 'bg-danger'} rounded-pill">
+                            ${isRunning ? 'Running' : 'Stopped'}
+                        </span>
+                    `;
+                    
+                    servicesList.appendChild(serviceItem);
+                }
+                
+                // Update APIs list
+                const apisList = document.getElementById('apisList');
+                apisList.innerHTML = '';
+                
+                for (const [api, isConfigured] of Object.entries(status.apis)) {
+                    const apiItem = document.createElement('li');
+                    apiItem.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    
+                    // Format API name
+                    const apiName = api.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                                      .replace('Api', 'API').replace('Llm', 'LLM');
+                    
+                    apiItem.innerHTML = `
+                        <span>
+                            <span class="api-status ${isConfigured ? 'active' : 'inactive'}"></span>
+                            ${apiName}
+                        </span>
+                        <span class="badge ${isConfigured ? 'bg-success' : 'bg-warning'} rounded-pill">
+                            ${isConfigured ? 'Configured' : 'Not Configured'}
+                        </span>
+                    `;
+                    
+                    apisList.appendChild(apiItem);
+                }
+                
+                // Update jobs list
+                const jobsList = document.getElementById('jobsList');
+                jobsList.innerHTML = '';
+                
+                if (status.jobs.length === 0) {
+                    jobsList.innerHTML = '<div class="text-center py-3">No active scheduler jobs.</div>';
+                } else {
+                    status.jobs.forEach(job => {
+                        const jobItem = document.createElement('div');
+                        jobItem.className = 'scheduler-job';
+                        
+                        // Format job name
+                        const jobName = job.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        
+                        jobItem.innerHTML = `
+                            <div class="d-flex align-items-center">
+                                <div class="me-2">
+                                    <span class="api-status active"></span>
+                                </div>
+                                <div>${jobName}</div>
+                            </div>
+                        `;
+                        
+                        jobsList.appendChild(jobItem);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error loading system status:', error);
+                
+                document.getElementById('servicesList').innerHTML = '<li class="list-group-item text-danger">Error loading services status.</li>';
+                document.getElementById('apisList').innerHTML = '<li class="list-group-item text-danger">Error loading APIs status.</li>';
+                document.getElementById('jobsList').innerHTML = '<div class="text-danger p-3">Error loading scheduler jobs.</div>';
+            });
+    }
+    
+    // Event listeners
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load initial data
+        loadSchedulingSettings();
+        loadSystemStatus();
+        
+        // Add event listeners to sliders for live updating values
+        const sliders = ['emailInterval', 'calendarInterval', 'todoistInterval', 'statusInterval', 'taskInterval', 'llmInterval'];
+        sliders.forEach(slider => {
+            document.getElementById(slider).addEventListener('input', function() {
+                updateSliderValueDisplay(slider, `${slider}Value`);
+            });
+        });
+        
+        // Form submission
+        document.getElementById('schedulingForm').addEventListener('submit', saveSchedulingSettings);
+    });
+</script>
+{% endblock %}

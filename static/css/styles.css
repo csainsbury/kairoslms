@@ -1,0 +1,158 @@
+/* Main Styles for Kairos LMS */
+
+:root {
+    --primary-color: #4a6da7;
+    --secondary-color: #2c3e50;
+    --accent-color: #27ae60;
+    --bg-light: #f8f9fa;
+    --text-dark: #333;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-light);
+    color: var(--text-dark);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Navigation */
+.navbar {
+    background-color: var(--primary-color);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.navbar-brand, .nav-link {
+    color: white !important;
+}
+
+.active-nav {
+    font-weight: bold;
+    border-bottom: 2px solid white;
+}
+
+/* Cards and Components */
+.card {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1rem;
+    border: none;
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.card-header {
+    background-color: var(--primary-color);
+    color: white;
+    font-weight: 500;
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-primary:hover {
+    background-color: #3c5a8a;
+    border-color: #3c5a8a;
+}
+
+.btn-success {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+.btn-success:hover {
+    background-color: #219653;
+    border-color: #219653;
+}
+
+/* Sidebar */
+.sidebar {
+    background-color: white;
+    border-right: 1px solid #dee2e6;
+    min-height: calc(100vh - 56px);
+    padding-top: 1rem;
+}
+
+/* Priority Colors */
+.priority-high {
+    color: #e74c3c;
+}
+
+.priority-medium {
+    color: #f39c12;
+}
+
+.priority-low {
+    color: #3498db;
+}
+
+/* Footer */
+.footer {
+    background-color: var(--secondary-color);
+    color: white;
+    padding: 1rem 0;
+    margin-top: auto;
+}
+
+/* Dashboard specific */
+.goal-card {
+    transition: transform 0.2s;
+}
+
+.goal-card:hover {
+    transform: translateY(-5px);
+}
+
+.task-item {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    transition: background-color 0.2s;
+}
+
+.task-item:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Chat specific */
+.chat-window {
+    height: 60vh;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 1rem;
+    background-color: white;
+}
+
+.message {
+    margin-bottom: 1rem;
+    padding: 0.5rem 1rem;
+    border-radius: 1rem;
+    max-width: 80%;
+}
+
+.message-user {
+    background-color: #d1ecf1;
+    align-self: flex-end;
+    margin-left: auto;
+}
+
+.message-system {
+    background-color: #f8d7da;
+    align-self: flex-start;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .sidebar {
+        min-height: auto;
+        border-right: none;
+        border-bottom: 1px solid #dee2e6;
+        margin-bottom: 1rem;
+    }
+    
+    .message {
+        max-width: 90%;
+    }
+}
