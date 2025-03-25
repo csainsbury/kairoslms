@@ -176,12 +176,16 @@ Copy the output and replace `your_generated_secret_key` in the .env file with th
 
 ## 6. Set Up API Credentials
 
-### Gmail API Credentials
+### Gmail and Calendar API Credentials
+
+You have two authentication options for Gmail and Calendar APIs:
+
+#### Option A: OAuth 2.0 Authentication (Requires Browser Access)
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project
-3. Enable the Gmail API
-4. Create OAuth 2.0 credentials
+3. Enable the Gmail API and Google Calendar API
+4. Create OAuth 2.0 credentials (Desktop client type)
 5. Download the credentials JSON file
 6. Create the config directory and upload the credentials:
 
@@ -189,39 +193,96 @@ Copy the output and replace `your_generated_secret_key` in the .env file with th
 mkdir -p ~/kairoslms/config/credentials
 ```
 
-Upload the credentials file to the server and rename it:
+Upload the credentials files to the server:
 
 ```bash
 # From your local machine
-scp path/to/your/credentials.json username@your_server_ip:~/kairoslms/config/credentials/gmail_credentials.json
+scp path/to/your/gmail_credentials.json username@your_server_ip:~/kairoslms/config/credentials/gmail_credentials.json
+scp path/to/your/calendar_credentials.json username@your_server_ip:~/kairoslms/config/credentials/calendar_credentials.json
 ```
 
-### Google Calendar API Credentials
-
-1. In the same Google Cloud project, enable the Google Calendar API
-2. Use the same OAuth 2.0 credentials or create new ones
-3. Download the credentials JSON file (if using new credentials)
-4. Upload to the server:
-
-```bash
-# From your local machine
-scp path/to/your/credentials.json username@your_server_ip:~/kairoslms/config/credentials/calendar_credentials.json
-```
-
-Update the .env file to point to the correct paths:
+Update the .env file to specify OAuth authentication:
 
 ```bash
 vim config/.env
 ```
 
-Change the credential file paths:
+Set the following variables:
 
 ```
+# Gmail settings
+GMAIL_AUTH_METHOD=oauth
 GMAIL_CREDENTIALS_FILE=/app/config/credentials/gmail_credentials.json
 GMAIL_TOKEN_FILE=/app/config/credentials/gmail_token.json
+
+# Calendar settings
+CALENDAR_AUTH_METHOD=oauth
 CALENDAR_CREDENTIALS_FILE=/app/config/credentials/calendar_credentials.json
 CALENDAR_TOKEN_FILE=/app/config/credentials/calendar_token.json
 ```
+
+#### Option B: Service Account Authentication (Recommended for Headless Servers)
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project
+3. Enable the Gmail API and Google Calendar API
+4. Create a Service Account:
+   - Go to "IAM & Admin" > "Service Accounts"
+   - Click "Create Service Account"
+   - Give it a name (e.g., "kairoslms-service-account")
+   - Grant necessary roles (e.g., Gmail API User, Calendar API User)
+   - Click "Done"
+5. Create credentials for the service account:
+   - Click on the service account you just created
+   - Go to the "Keys" tab
+   - Click "Add Key" > "Create new key"
+   - Choose JSON format and click "Create"
+   - Download the service account key file
+6. Enable domain-wide delegation for the service account:
+   - Click on the service account
+   - Click "Edit"
+   - Enable "Domain-wide delegation"
+   - Save
+
+7. In Google Workspace or Gmail admin settings:
+   - Go to Security > API Controls
+   - In the "Domain-wide Delegation" section, click "Manage Domain-wide Delegation"
+   - Add a new API client:
+     - Client ID: (use the service account's client ID)
+     - OAuth Scopes: https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/calendar.readonly
+
+8. Upload the service account key file to the server:
+
+```bash
+mkdir -p ~/kairoslms/config/credentials
+```
+
+```bash
+# From your local machine
+scp path/to/your/service-account-key.json username@your_server_ip:~/kairoslms/config/credentials/google_service_account.json
+```
+
+9. Update the .env file to use service account authentication:
+
+```bash
+vim config/.env
+```
+
+Set the following variables:
+
+```
+# Gmail settings
+GMAIL_AUTH_METHOD=service_account
+GMAIL_SERVICE_ACCOUNT_FILE=/app/config/credentials/google_service_account.json
+GMAIL_DELEGATED_EMAIL=your_email@example.com
+
+# Calendar settings
+CALENDAR_AUTH_METHOD=service_account
+CALENDAR_SERVICE_ACCOUNT_FILE=/app/config/credentials/google_service_account.json
+CALENDAR_DELEGATED_EMAIL=your_email@example.com
+```
+
+Replace `your_email@example.com` with the email address whose Gmail and Calendar data you want to access.
 
 ## 7. Create Directories for Data Persistence
 
@@ -279,20 +340,144 @@ View logs to ensure everything started correctly:
 docker-compose -f config/docker-compose.yml logs -f
 ```
 
-## 10. Initialize OAuth Authentication
+## 10. Configure Authentication for Google APIs
 
-For Gmail and Calendar APIs, you need to authenticate with Google:
+Depending on which authentication method you chose earlier (OAuth or Service Account), follow the appropriate instructions:
+
+### For OAuth Authentication (Option A)
+
+If you're using OAuth authentication, you'll need to generate and transfer token files. Since this is a headless server, use one of these approaches:
+
+#### Method 1: Local Token Generation and Transfer
+
+1. On your local development machine, run the authentication flow:
 
 ```bash
-# Access the app container
-docker-compose -f config/docker-compose.yml exec app /bin/bash
+# Clone the repository locally if you haven't already
+git clone https://github.com/yourusername/kairoslms.git
+cd kairoslms
+
+# Install required packages
+pip install -r requirements.txt
+
+# Copy your credential files to the local directory
+mkdir -p config/credentials
+cp /path/to/your/gmail_credentials.json config/credentials/
+cp /path/to/your/calendar_credentials.json config/credentials/
+
+# Create a simple authentication script
+cat > authenticate_google.py << 'EOF'
+from src.ingestion.email_ingestion import GmailClient
+from src.ingestion.calendar_ingestion import CalendarClient
+
+# Gmail authentication
+print("Authenticating Gmail...")
+gmail_client = GmailClient(
+    credentials_file='config/credentials/gmail_credentials.json',
+    token_file='config/credentials/gmail_token.json'
+)
+gmail_client.authenticate()
+print("Gmail authentication successful! Token saved to config/credentials/gmail_token.json")
+
+# Calendar authentication
+print("Authenticating Google Calendar...")
+calendar_client = CalendarClient(
+    credentials_file='config/credentials/calendar_credentials.json',
+    token_file='config/credentials/calendar_token.json'
+)
+calendar_client.authenticate()
+print("Calendar authentication successful! Token saved to config/credentials/calendar_token.json")
+EOF
 
 # Run the authentication script
-python -c "from src.ingestion.email_ingestion import GmailClient; client = GmailClient(); client.authenticate()"
-python -c "from src.ingestion.calendar_ingestion import CalendarClient; client = CalendarClient(); client.authenticate()"
+python authenticate_google.py
 ```
 
-Follow the authentication flow by copying the URL to your local browser, logging in with Google, and pasting the authorization code back into the terminal.
+2. A browser window will open for each service. Complete the OAuth flow by:
+   - Signing in with your Google account
+   - Granting the requested permissions
+   - Waiting for the "Authentication successful" message
+
+3. After successful authentication, token files will be created. Transfer these token files to your remote server:
+
+```bash
+# From your local machine
+scp config/credentials/gmail_token.json username@your_server_ip:~/kairoslms/config/credentials/
+scp config/credentials/calendar_token.json username@your_server_ip:~/kairoslms/config/credentials/
+```
+
+#### Method 2: SSH Tunnel with X11 Forwarding
+
+If you prefer to run the OAuth flow directly on the server:
+
+1. Connect to your server with X11 forwarding:
+
+```bash
+ssh -X username@your_server_ip
+```
+
+2. Install required packages on the server:
+
+```bash
+sudo apt-get install -y xauth firefox
+```
+
+3. Create an authentication script:
+
+```bash
+cd ~/kairoslms
+cat > authenticate_google.py << 'EOF'
+from src.ingestion.email_ingestion import GmailClient
+from src.ingestion.calendar_ingestion import CalendarClient
+
+# Gmail authentication
+print("Authenticating Gmail...")
+gmail_client = GmailClient()
+gmail_client.authenticate()
+print("Gmail authentication successful!")
+
+# Calendar authentication
+print("Authenticating Google Calendar...")
+calendar_client = CalendarClient()
+calendar_client.authenticate()
+print("Calendar authentication successful!")
+EOF
+```
+
+4. Run the script:
+
+```bash
+# Make sure environment has correct Python path
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+
+# Run authentication
+python authenticate_google.py
+```
+
+5. Browser windows should open through X11 forwarding. Complete the authentication for each service.
+
+### For Service Account Authentication (Option B)
+
+If you've configured service account authentication in the `.env` file as outlined in Step 6, no additional authentication steps are required. The service account credentials will be used automatically when the application starts.
+
+To verify the service account setup:
+
+```bash
+# Start a Python shell in the container
+docker-compose -f config/docker-compose.yml exec app python
+
+# Test authentication
+>>> from src.ingestion.email_ingestion import GmailClient
+>>> client = GmailClient()
+>>> client.authenticate()
+>>> # If no errors occur, authentication is working correctly
+>>> exit()
+```
+
+If you see any errors, check:
+1. The service account key file path is correct
+2. Domain-wide delegation is properly configured in Google Workspace
+3. The delegated email address is correct in your .env file
 
 ## 11. Set Up SSL/TLS (Optional but Recommended)
 

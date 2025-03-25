@@ -15,6 +15,7 @@ from email.utils import parsedate_to_datetime
 import google.auth
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -30,45 +31,97 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 class GmailClient:
     """Client for interacting with Gmail API."""
     
-    def __init__(self, credentials_file: Optional[str] = None, token_file: Optional[str] = None):
+    def __init__(self, credentials_file: Optional[str] = None, token_file: Optional[str] = None, 
+                 service_account_file: Optional[str] = None, delegated_email: Optional[str] = None):
         """
         Initialize the Gmail client.
         
         Args:
-            credentials_file: Path to the client secrets file
-            token_file: Path to the token file
+            credentials_file: Path to the client secrets file (for OAuth)
+            token_file: Path to the token file (for OAuth)
+            service_account_file: Path to service account credentials (for service account auth)
+            delegated_email: Email to impersonate with service account
         """
         self.credentials_file = credentials_file or os.getenv("GMAIL_CREDENTIALS_FILE")
         self.token_file = token_file or os.getenv("GMAIL_TOKEN_FILE")
+        self.service_account_file = service_account_file or os.getenv("GMAIL_SERVICE_ACCOUNT_FILE")
+        self.delegated_email = delegated_email or os.getenv("GMAIL_DELEGATED_EMAIL")
         self.service = None
+        self.auth_method = os.getenv("GMAIL_AUTH_METHOD", "oauth")  # 'oauth' or 'service_account'
     
     def authenticate(self) -> None:
-        """Authenticate to Gmail API."""
+        """Authenticate to Gmail API using either OAuth or Service Account."""
+        # Check if we should use service account authentication
+        if self.auth_method == "service_account" and self.service_account_file and os.path.exists(self.service_account_file):
+            self._authenticate_service_account()
+        else:
+            self._authenticate_oauth()
+    
+    def _authenticate_service_account(self) -> None:
+        """Authenticate using a service account."""
+        try:
+            # Create credentials from service account file
+            creds = service_account.Credentials.from_service_account_file(
+                self.service_account_file, scopes=SCOPES
+            )
+            
+            # If delegated email is provided, create delegated credentials
+            if self.delegated_email:
+                creds = creds.with_subject(self.delegated_email)
+            
+            # Create Gmail API service
+            self.service = build('gmail', 'v1', credentials=creds)
+            logger.info("Gmail API authentication with service account successful")
+        except Exception as e:
+            logger.error(f"Error authenticating with service account: {str(e)}")
+            raise
+    
+    def _authenticate_oauth(self) -> None:
+        """Authenticate using OAuth 2.0."""
         creds = None
         
         # Check if token file exists
         if os.path.exists(self.token_file):
-            creds = Credentials.from_authorized_user_info(
-                info=eval(open(self.token_file, 'r').read()), scopes=SCOPES
-            )
+            try:
+                with open(self.token_file, 'r') as token:
+                    creds = Credentials.from_authorized_user_info(
+                        info=eval(token.read()), scopes=SCOPES
+                    )
+            except Exception as e:
+                logger.error(f"Error loading token file: {str(e)}")
         
         # If there are no valid credentials, let the user log in
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.credentials_file, SCOPES
-                )
-                creds = flow.run_local_server(port=0)
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    logger.error(f"Error refreshing token: {str(e)}")
+                    creds = None
+            
+            if not creds:
+                if not os.path.exists(self.credentials_file):
+                    raise FileNotFoundError(f"Credentials file not found: {self.credentials_file}")
+                
+                try:
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        self.credentials_file, SCOPES
+                    )
+                    creds = flow.run_local_server(port=0)
+                except Exception as e:
+                    logger.error(f"Error in OAuth flow: {str(e)}")
+                    raise
             
             # Save the credentials for the next run
-            with open(self.token_file, 'w') as token:
-                token.write(str(creds.to_json()))
+            try:
+                with open(self.token_file, 'w') as token:
+                    token.write(str(creds.to_json()))
+            except Exception as e:
+                logger.error(f"Error saving token file: {str(e)}")
         
         # Create Gmail API service
         self.service = build('gmail', 'v1', credentials=creds)
-        logger.info("Gmail API authentication successful")
+        logger.info("Gmail API authentication with OAuth successful")
     
     def fetch_emails(self, days: int = 1, max_results: int = 100) -> List[Dict[str, Any]]:
         """
